@@ -248,3 +248,95 @@ def grow(P, S, tol=1e-9, max_rounds=20, slide=(0.0,)):
         if not added:
             break
     return P
+
+
+def resolve_priority(groups, S, tol=1e-9):
+    """groups: list of arrays in decreasing priority. A square is kept if it is inside the box and
+    does not overlap any kept square of higher or equal priority (greedy in order)."""
+    from slp import pair_gaps_vec
+    kept = np.zeros((0, 3))
+    for G in groups:
+        G = in_box(np.asarray(G).reshape(-1, 3), S, tol)
+        for q in G:
+            if len(kept):
+                d = np.hypot(kept[:, 0] - q[0], kept[:, 1] - q[1])
+                idx = np.where(d < math.sqrt(2) + 1e-9)[0]
+                if len(idx):
+                    if d[idx].min() < 1 - 1e-9:
+                        continue
+                    T = np.vstack([kept[idx], q])
+                    pr = np.c_[np.arange(len(idx)), np.full(len(idx), len(idx))]
+                    if pair_gaps_vec(T, pr).min() < -tol:
+                        continue
+            kept = np.vstack([kept, q])
+    return kept
+
+
+def lcorner(K, f, h, R, ph_top, qext=3, order='rqt'):
+    """L-band with lattice corner: right band rows (along e1) left-aligned at x=K-h, a pure lattice
+    block (rows shifted by e2) above them up to the top wall, top band sticks floor-aligned at y=K-h."""
+    S = K + f
+    W = h + f
+    m = h + 1
+    t = stick_theta(m, W)
+    c, s = math.cos(t), math.sin(t)
+    p = 1 / c
+    X0 = K - h
+    core = grid_rect(0, X0, 0, X0)
+    rows = []
+    for r in range(R):
+        y_r = r * p
+        cx0 = X0 + 0.5 * (c + s)
+        cy0 = y_r + 0.5 * (c + s)
+        rows.append([(cx0 + i * c, cy0 + i * s, t) for i in range(m)])
+    rb = np.array(rows).reshape(-1, 3)
+    # lattice block above the top row: shift top row by q*e2, extended along e1 both ways
+    top_row = np.array(rows[-1])
+    Q = []
+    for q in range(1, int(S) + 2):
+        for i in range(-qext, m + qext):
+            cx = top_row[0, 0] + i * c - q * s
+            cy = top_row[0, 1] + i * s + q * c
+            Q.append((cx, cy, t))
+    Q = np.array(Q)
+    top = band(-2, S, X0, S, True, 1, ph_top)  # lean left sticks, extend past the left wall then clip
+    groups = {'r': rb, 'q': Q, 't': top}
+    P = resolve_priority([core] + [groups[k] for k in order], S)
+    return P, S
+
+
+def lcorner2(K, f, h, R, qext=3, extra_shift=0.0):
+    """As lcorner, but top band sticks phased so the last stick is flush with the lattice block."""
+    S = K + f
+    W = h + f
+    m = h + 1
+    t = stick_theta(m, W)
+    c, s = math.cos(t), math.sin(t)
+    p = 1 / c
+    X0 = K - h
+    core = grid_rect(0, X0, 0, X0)
+    rows = []
+    for r in range(R):
+        y_r = r * p
+        rows.append([(X0 + 0.5 * (c + s) + i * c, y_r + 0.5 * (c + s) + i * s, t) for i in range(m)])
+    rb = np.array(rows).reshape(-1, 3)
+    top_row = np.array(rows[-1])
+    yL = (R - 1) * p + c
+    Q = []
+    for q in range(1, int(S / c) + 2):
+        for i in range(-qext, m + qext):
+            Q.append((top_row[0, 0] + i * c - q * s, top_row[0, 1] + i * s + q * c, t))
+    Q = np.array(Q)
+    xQ = X0 - (X0 - yL) * math.tan(t)  # Q left line at height Y0 = X0
+    xk = xQ - p + extra_shift
+    stks = []
+    j = 0
+    while xk - j * p > -W * math.tan(t) - 2:
+        x = xk - j * p
+        cx = x + 0.5 * (c - s); cy = X0 + 0.5 * (s + c)
+        for i in range(m):
+            stks.append((cx - i * s, cy + i * c, t))
+        j += 1
+    top = np.array(stks)
+    P = resolve_priority([core, rb, Q, top], S)
+    return P, S
