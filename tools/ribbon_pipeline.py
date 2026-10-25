@@ -33,7 +33,12 @@ def main():
             p, q, hA0, hB0, k = key
             Ls = key
         m = p
+        lost = sum(b - a for a, b in zip(hB0, hA0)) if False else sum(hB0[i] - hA0[i] for i in range(p))
+        g = (k - lost) / p
         for K in range(8, 32):
+            n_est = int(K * K + g * K)
+            if all(cur.get(nn, math.ceil(math.sqrt(nn))) <= K + f + 1e-9 for nn in range(max(1, n_est - 8), min(1000, n_est + 2) + 1)):
+                continue
             best = {}
             for c in range(-6, 7):
                 for ph in range(m):
