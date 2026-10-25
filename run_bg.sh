@@ -11,3 +11,4 @@ start band_0 hopper_band.py 0 2 300 $D
 start band_1 hopper_band.py 1 2 301 $D
 start hop_0 hopper.py 0 3 100 $D
 start hoppq_0 hopper_pq.py 0 1 200 $D
+start band_seeded band_seeded.py 7 $D
