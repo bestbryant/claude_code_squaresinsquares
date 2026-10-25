@@ -117,3 +117,178 @@ def best_for_K(dp, K):
     a = dp[:K + 2, :K + 1].max()
     b = dp[:K + 1, :K + 2].max()
     return max(a, b)
+
+
+import numba as nb
+
+NEG = -1000000000
+
+
+@nb.njit(cache=True)
+def _add_item4(D, w, h, v):
+    """D[layer, x, y], layer = 2*anycol + anyrow. Item may pay a column or a row buffer."""
+    N = D.shape[1]
+    for x in range(N):
+        for y in range(N):
+            for l in range(4):
+                c, r = l // 2, l % 2
+                # column buffer: cost (w+1, h) -> layer (1, r)
+                if x >= w + 1 and y >= h:
+                    val = D[l, x - w - 1, y - h]
+                    if val > NEG:
+                        t = 2 + r
+                        if val + v > D[t, x, y]:
+                            D[t, x, y] = val + v
+                if x >= w and y >= h + 1:
+                    val = D[l, x - w, y - h - 1]
+                    if val > NEG:
+                        t = 2 * c + 1
+                        if val + v > D[t, x, y]:
+                            D[t, x, y] = val + v
+
+
+@nb.njit(cache=True)
+def _best_K(D, K):
+    b = 0
+    for x in range(min(K + 2, D.shape[1])):
+        for y in range(min(K + 2, D.shape[1])):
+            for l in range(4):
+                c, r = l // 2, l % 2
+                ok = (c == 1 and x <= K + 1 and y <= K) or (r == 1 and x <= K and y <= K + 1)
+                if ok and D[l, x, y] > b:
+                    b = D[l, x, y]
+    return b
+
+
+@nb.njit(cache=True)
+def _dp4_arg(ws, hs, vs, N):
+    D = np.full((4, N, N), NEG, np.int64)
+    A = np.full((4, N, N), -1, np.int64)
+    D[0, 0, 0] = 0
+    for x in range(N):
+        for y in range(N):
+            for l in range(4):
+                if D[l, x, y] == NEG:
+                    continue
+                c, r = l // 2, l % 2
+                for i in range(len(ws)):
+                    for o in range(2):
+                        a = ws[i] + (1 - o)
+                        b = hs[i] + o
+                        X, Y = x + a, y + b
+                        t = (2 + r) if o == 0 else (2 * c + 1)
+                        if X < N and Y < N and D[l, x, y] + vs[i] > D[t, X, Y]:
+                            D[t, X, Y] = D[l, x, y] + vs[i]
+                            A[t, X, Y] = (i * 2 + o) * 4 + l
+    return D, A
+
+
+def frontier(G, Kmin=4, Kmax=31):
+    N = Kmax + 3
+    items = sorted(((f, w, h, dm) for (w, h, dm), (f, _) in G.items()))
+    D = np.full((4, N, N), NEG, np.int64)
+    D[0, 0, 0] = 0
+    best = {K: 0 for K in range(Kmin, Kmax + 1)}
+    rec = {}
+    for f, w, h, dm in items:
+        if w > Kmax or h > Kmax:
+            continue
+        _add_item4(D, w, h, dm)
+        for K in range(max(Kmin, max(w, h)), Kmax + 1):
+            v = _best_K(D, K)
+            if v > best[K]:
+                for d in range(best[K] + 1, v + 1):
+                    rec[(K, d)] = f
+                best[K] = v
+    return rec
+
+
+def reconstruct(G, K, delta, f):
+    keys = [k for k, v in G.items() if v[0] <= f + 1e-15 and k[0] <= K and k[1] <= K]
+    ws = np.array([k[0] for k in keys], np.int64)
+    hs = np.array([k[1] for k in keys], np.int64)
+    vs = np.array([k[2] for k in keys], np.int64)
+    N = K + 3
+    D, A = _dp4_arg(ws, hs, vs, N)
+    best = None
+    for x in range(N):
+        for y in range(N):
+            for l in range(4):
+                c, r = l // 2, l % 2
+                ok = (c == 1 and x <= K + 1 and y <= K) or (r == 1 and x <= K and y <= K + 1)
+                if ok and D[l, x, y] >= delta and (best is None or D[l, x, y] < D[best]):
+                    best = (l, x, y)
+    if best is None:
+        return None
+    chain = []
+    l, x, y = best
+    while (x, y) != (0, 0):
+        a = A[l, x, y]
+        io, pl = a // 4, a % 4
+        i, o = io // 2, io % 2
+        w, h, dm = keys[i]
+        chain.append((w, h, dm, o))
+        x -= w + (1 - o)
+        y -= h + o
+        l = pl
+    chain.reverse()
+    # the last gadget needs no buffer: move its buffer onto an earlier gadget is unnecessary;
+    # build() simply ignores the final buffer.
+    return chain
+
+def build(chain, K, f, G, sols):
+    """Place chain gadgets top-left -> bottom-right; continents fill the rest. Returns packing."""
+    chain = list(chain)
+    cols = sum(c[0] for c in chain) + sum(1 for c in chain if c[3] == 0)
+    rows = sum(c[1] for c in chain) + sum(1 for c in chain if c[3] == 1)
+    # the last gadget's buffer is dropped: make sure it is the one that overflows
+    if cols > K:
+        j = max(i for i, c in enumerate(chain) if c[3] == 0)
+        chain.append(chain.pop(j))
+    elif rows > K:
+        j = max(i for i, c in enumerate(chain) if c[3] == 1)
+        chain.append(chain.pop(j))
+    out = []
+    ox, top = 0, K
+    placements = []
+    for idx, (w, h, dm, o) in enumerate(chain):
+        oy = top - h
+        if oy < 0 or ox + w > K:
+            return None
+        placements.append((ox, oy, w, h, dm))
+        if o == 0:
+            ox, top = ox + w + 1, oy
+        else:
+            ox, top = ox + w, oy - 1
+    split = np.full(K, -1)   # A rows < a[c]; B rows >= b[c]
+    a = np.zeros(K, int); b = np.zeros(K, int)
+    for (ox_, oy_, w, h, dm) in placements:
+        a[ox_:ox_ + w] = oy_
+        b[ox_:ox_ + w] = oy_ + h
+        split[ox_:ox_ + w] = 1
+    last_oy = placements[-1][1]
+    for c in range(K):
+        if split[c] == 1:
+            continue
+        # buffer column (after gadget m) or trailing column: A below previous gadget's bottom
+        prv = [p for p in placements if p[0] + p[2] <= c]
+        v = prv[-1][1] if prv else K
+        a[c] = b[c] = v
+    for (ox_, oy_, w, h, dm) in placements:
+        fg, (n, k) = G[(w, h, dm)]
+        P = crop(sols[n] if not isinstance(n, str) else sols[n], k, w, h, fg)
+        ext = 0.5 * (np.abs(np.cos(P[:, 2])) + np.abs(np.sin(P[:, 2])))
+        r = np.maximum(0, np.maximum(P[:, 0] + ext - w, P[:, 1] + ext - h))
+        P = P[np.argsort(r)[:w * h + dm]].copy()
+        if len(P) < w * h + dm:
+            return None
+        P[:, 0] += ox_; P[:, 1] += oy_
+        out.append(P)
+    cells = []
+    for c in range(K):
+        for j in range(a[c]):
+            cells.append((c + 0.5, j + 0.5, 0.0))
+        for j in range(b[c], K):
+            cells.append((c + 0.5 + f, j + 0.5 + f, 0.0))
+    out.append(np.array(cells).reshape(-1, 3))
+    return np.vstack(out)

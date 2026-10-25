@@ -340,3 +340,33 @@ def lcorner2(K, f, h, R, qext=3, extra_shift=0.0):
     top = np.array(stks)
     P = resolve_priority([core, rb, Q, top], S)
     return P, S
+
+
+def stick_ribbon(K, f, m, t, T, c0, gap=1e-9, u=None):
+    """Ribbon of sticks (m squares stacked along e2 of tilt t) translated by T from c0, crossing the
+    box; continent A at lattice offset (f,0) (lower-right), B at (0,f) (upper-left), greedy."""
+    S = K + f
+    c, s = math.cos(t), math.sin(t)
+    e2 = np.array([-s, c]) if u is None else np.array(u)
+    rib = []
+    for j in range(-int(3 * S), int(3 * S)):
+        base = np.array(c0) + j * np.array(T)
+        for i in range(m):
+            p = base + i * e2
+            rib.append((p[0], p[1], t))
+    rib = in_box(np.array(rib), S)
+    # continents: A below the ribbon line, B above. Use the ribbon direction to decide sides.
+    d = np.array(T) / np.hypot(*T)
+    nrm = np.array([-d[1], d[0]])
+    mid = np.array(c0) + (m - 1) / 2 * e2
+    A = []; B = []
+    for i in range(K):
+        for j in range(K):
+            pa = np.array([i + 0.5 + f, j + 0.5])
+            pb = np.array([i + 0.5, j + 0.5 + f])
+            if (pa - mid) @ nrm < 0:
+                A.append((pa[0], pa[1], 0.0))
+            if (pb - mid) @ nrm > 0:
+                B.append((pb[0], pb[1], 0.0))
+    P = resolve_priority([rib, np.array(A), np.array(B)], S)
+    return P, S

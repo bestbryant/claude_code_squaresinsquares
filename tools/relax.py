@@ -67,9 +67,10 @@ def energy_grad(z, n, S, pairs, free=None, base=None, mu=0.0):
         cy = y + s * vx + c * vy
         dcx_dt = -s * vx - c * vy
         dcy_dt = c * vx - s * vy
-        for cc, dd, col in ((cx, dcx_dt, 0), (cy, dcy_dt, 1)):
+        Sx, Sy = (S, S) if np.isscalar(S) else S
+        for cc, dd, col, SS in ((cx, dcx_dt, 0, Sx), (cy, dcy_dt, 1, Sy)):
             lo = np.minimum(cc, 0.0)
-            hi = np.maximum(cc - S, 0.0)
+            hi = np.maximum(cc - SS, 0.0)
             e = lo + hi
             if np.any(e != 0):
                 E += (e ** 2).sum()
