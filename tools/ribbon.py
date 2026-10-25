@@ -65,14 +65,22 @@ def periodic_energy(z, k, T, obs, mu, band=None, imgs=(1, -1, 2, -2)):
     return E, g.ravel()
 
 
+def wrap(X, T):
+    X = np.array(X, float)
+    sft = np.floor(X[:, 0] / T[0])
+    X[:, 0] -= sft * T[0]; X[:, 1] -= sft * T[1]
+    return X
+
+
 def fit(X0, T, hA, hB, p, q, f, mu=1e-9, iters=3000):
+    X0 = wrap(X0, T)
     obs = obstacles(hA, hB, p, q, f)
     k = len(X0)
     sl = q / p
     band = (min(hA[i] - i * sl for i in range(p)) - 1.5, max(hB[i] - i * sl for i in range(p)) + f + 1.5, sl)
     res = minimize(periodic_energy, X0.ravel(), args=(k, T, obs, mu, band), jac=True, method='L-BFGS-B',
                    options={'maxiter': iters, 'ftol': 1e-30, 'gtol': 1e-15, 'maxcor': 40})
-    return res.x.reshape(k, 3), res.fun
+    return wrap(res.x.reshape(k, 3), T), res.fun
 
 
 def random_init(k, T, hA, hB, p, q, f, rng):
@@ -201,6 +209,7 @@ def _entities(X, T, hA, hB, p, q, f):
 
 
 def periodic_feasible(X, T, hA, hB, p, q, f, margin=0.0):
+    X = wrap(X, T)
     from slp import pair_gaps_vec
     ents = _entities(X, T, hA, hB, p, q, f)
     P = np.array([e[0] for e in ents])
@@ -220,6 +229,7 @@ def periodic_feasible(X, T, hA, hB, p, q, f, margin=0.0):
 
 
 def periodic_lp_step(X, T, hA, hB, p, q, f, tr, margin=1e-10):
+    X = wrap(X, T)
     import scipy.sparse as sp
     from scipy.optimize import linprog
     from slp import pair_axes, corner_arrays
@@ -333,4 +343,30 @@ def build_puzzle_pq(K, f, p, q, hA0, hB0, X, c=0, phase=0):
         rib.append(Y)
     rib = in_box(np.vstack(rib), S)
     P = resolve_priority([np.array(A).reshape(-1, 3), np.array(B).reshape(-1, 3), rib], S)
+    return P, S
+
+
+def lshape_from_band(K, f, p, h, X, ph1=0.0, ph2=0.0, X2=None, p2=None, h2=None):
+    """Grid core (K-h2)x(K-h) + top band (periodic X, period p, height h+f, full width)
+    + right band (periodic X2 transposed, height K-h). Greedy priority: core, top, right."""
+    from bands import resolve_priority, in_box, grid_rect, transpose
+    X2 = X if X2 is None else X2
+    p2 = p if p2 is None else p2
+    h2 = h if h2 is None else h2
+    S = K + f
+    core = grid_rect(0, K - h2, 0, K - h)
+    top = []
+    for r in range(-2, int(S / p) + 3):
+        Y = X.copy(); Y[:, 0] += r * p + ph1; Y[:, 1] += K - h
+        top.append(Y)
+    top = np.vstack(top)
+    top = top[top[:, 1] > K - h - 0.5]
+    right = []
+    for r in range(-2, int(S / p2) + 3):
+        Y = X2.copy(); Y[:, 0] += r * p2 + ph2
+        right.append(Y)
+    right = transpose(np.vstack(right))  # band x -> y, band y -> x
+    right[:, 0] += K - h2
+    right = right[right[:, 1] < K - h + 0.5]
+    P = resolve_priority([core, in_box(top, S), in_box(right, S)], S)
     return P, S
