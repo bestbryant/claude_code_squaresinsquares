@@ -7,8 +7,8 @@ cd $S
 timeout 900 python3 $R/tools/listcode.py > /dev/null 2>&1 || true
 timeout 300 python3 $R/tools/frames.py https://www.kaggle.com/code/inversion/squares-in-squares-per-puzzle-leaderboard $S/best_L2.json > /dev/null 2>&1 || true
 rm -rf $S/out3 && mkdir -p $S/out3 && cd $S/out3
-cat $S/refs.txt | xargs -P 8 -I{} python3 $R/tools/getout.py {} > /dev/null 2>&1 || true
-find "$PWD" -name "*.csv" -size +5M | grep -v -E "details|roundtrip" > $S/cands3.txt
+cat $S/refs.txt | xargs -P 2 -I{} python3 $R/tools/getout.py {} > /dev/null 2>&1 || true
+find "$PWD" -name "*.csv" -size +5M | grep -v -E "details|roundtrip" > $S/cands3.txt || true
 cd $R
 OMP_NUM_THREADS=1 python3 tools/merge.py $(cat $S/cands3.txt) 2>&1 | grep TOTAL
 OMP_NUM_THREADS=1 python3 tools/dp_pipeline.py 2>&1 | tail -2
