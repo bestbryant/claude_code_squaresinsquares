@@ -417,3 +417,69 @@ def grow_push(P, isfree, k, h0, W, steps, dxy, seed, tol, maxc):
         for c in range(nc):
             inc[cl[c]] = False
     return P, h
+
+
+@nb.njit(cache=True)
+def grow_all_rect(F, Q, h0, W, H, steps, dxy, dth, seed, tol, grow_every, dh):
+    """LS growth: Q (m,3) free squares with common half-size h (start h0) among fixed F (k,3)
+    unit squares, box [0,W]^2.  Returns (Q, h)."""
+    np.random.seed(seed)
+    m = Q.shape[0]; k = F.shape[0]
+    h = h0
+    for it in range(steps):
+        if it % grow_every == 0 and h < 0.5:
+            h2 = min(0.5, h + dh)
+            ok = True
+            for i in range(m):
+                X, Y = corners_s(Q[i, 0], Q[i, 1], Q[i, 2], h2)
+                for q in range(4):
+                    if X[q] < -tol or Y[q] < -tol or X[q] > W + tol or Y[q] > H + tol:
+                        ok = False
+                if not ok:
+                    break
+                for j in range(i + 1, m):
+                    if overlap_s(Q[i, 0], Q[i, 1], Q[i, 2], h2, Q[j, 0], Q[j, 1], Q[j, 2], h2, tol):
+                        ok = False
+                        break
+                if not ok:
+                    break
+                for j in range(k):
+                    if overlap_s(Q[i, 0], Q[i, 1], Q[i, 2], h2, F[j, 0], F[j, 1], F[j, 2], 0.5, tol):
+                        ok = False
+                        break
+                if not ok:
+                    break
+            if ok:
+                h = h2
+                dh = min(dh * 1.3, 0.004)
+            else:
+                dh *= 0.7
+                if dh < 1e-7:
+                    dh = 1e-7
+            if h >= 0.5:
+                break
+            continue
+        i = np.random.randint(m)
+        x = Q[i, 0] + dxy * h * (2 * np.random.random() - 1)
+        y = Q[i, 1] + dxy * h * (2 * np.random.random() - 1)
+        t = Q[i, 2] + dth * (2 * np.random.random() - 1)
+        X, Y = corners_s(x, y, t, h)
+        ok = True
+        for q in range(4):
+            if X[q] < -tol or Y[q] < -tol or X[q] > W + tol or Y[q] > H + tol:
+                ok = False
+        if not ok:
+            continue
+        for j in range(m):
+            if j != i and overlap_s(x, y, t, h, Q[j, 0], Q[j, 1], Q[j, 2], h, tol):
+                ok = False
+                break
+        if not ok:
+            continue
+        for j in range(k):
+            if overlap_s(x, y, t, h, F[j, 0], F[j, 1], F[j, 2], 0.5, tol):
+                ok = False
+                break
+        if ok:
+            Q[i, 0] = x; Q[i, 1] = y; Q[i, 2] = t
+    return Q, h
