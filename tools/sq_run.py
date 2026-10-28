@@ -7,7 +7,13 @@ from slp import side
 from common import finalize
 OUT = sys.argv[1]
 tl = float(sys.argv[2]); kick = float(sys.argv[3]); seed = int(sys.argv[4])
+done = set()
+logp = os.environ.get('SQLOG')
+if logp and os.path.exists(logp):
+    done = {int(l.split()[0]) for l in open(logp) if l[:1].isdigit()}
 for n in map(int, sys.argv[5:]):
+    if n in done:
+        continue
     P = np.load(os.path.join(os.path.dirname(__file__), '..', 'solutions', f'n{n}.npy'))
     L0 = side(P)
     Q, L = squeeze(P, time_limit=tl, rng=np.random.default_rng(seed), hops=25, kick=kick, delta0=0.004)

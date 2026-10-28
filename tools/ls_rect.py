@@ -25,6 +25,8 @@ if __name__ == '__main__':
     rng = np.random.default_rng(seed)
     res = pickle.load(open(out, 'rb')) if os.path.exists(out) else {}
     for (w, h, dm) in specs:
+        if (w, h, dm) in res and os.environ.get('RESUME'):
+            continue
         lo, hi = 0.3, 1.0
         best = None
         t0 = time.time()
