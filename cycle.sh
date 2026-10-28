@@ -9,7 +9,7 @@ true  # hoppers retired (no gains)
 SC=$(python3 tools/make_submission.py 2>&1 | grep 'official score' | awk '{print $3}')
 echo "score $SC (last submitted $(cat $LAST))"
 gzip -9 -c submission.csv > submission.csv.gz
-if [ -n "$SC" ] && python3 -c "import sys; sys.exit(0 if float('$SC') < float(open('$LAST').read()) - 1e-9 else 1)"; then
+if [ -n "$SC" ] && python3 -c "import sys; sys.exit(0 if float('$SC') < float(open('$LAST').read()) - 1e-4 else 1)"; then
   ./submit.sh "auto $SC" && echo $SC > $LAST && echo SUBMITTED
 fi
 git add -A && git commit -qm "Maintenance cycle: score $SC
