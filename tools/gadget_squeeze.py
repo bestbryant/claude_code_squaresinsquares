@@ -33,6 +33,8 @@ def job(args):
     ext = 0.5 * (np.abs(np.cos(P[:, 2])) + np.abs(np.sin(P[:, 2])))
     r = np.maximum(0, np.maximum(P[:, 0] + ext - w, P[:, 1] + ext - h))
     P = P[np.argsort(r)[:w * h + dm]].copy()
+    if len(P) != w * h + dm:
+        return (w, h, dm), f, f, False
     best_f, best_P = f, P
     for s in range(2):
         Q, f2 = squeeze_rect(best_P, w, h, best_f, time_limit=T / 2, rng=np.random.default_rng(seed + s),
