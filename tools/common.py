@@ -45,12 +45,24 @@ def fmt(v):
     return r
 
 
+def pandas_values(a):
+    """The float64 values Kaggle's scorer sees: repr strings parsed by pandas read_csv (its C
+    parser may differ from Python's float() by one ulp) and re-serialised by to_csv."""
+    import io
+    import pandas as pd
+    a = np.asarray(a, float)
+    txt = 'x,y,angle\n' + '\n'.join('%s,%s,%s' % (fmt(x), fmt(y), fmt(t)) for x, y, t in a)
+    df = pd.read_csv(io.StringIO(txt))
+    out = pd.read_csv(io.StringIO(df.to_csv(index=False)), dtype=str)
+    return out.to_numpy()
+
+
 def verify(a):
-    """Official verification on the float64-repr strings (what Kaggle sees after pandas round-trip)."""
+    """Official verification on exactly the strings Kaggle sees after the pandas round trip."""
     sq = []
-    for x, y, t in a:
-        sq.append(metric.Square(x=float(fmt(x)), y=float(fmt(y)), angle=float(fmt(t)),
-                                x_str=fmt(x), y_str=fmt(y), angle_str=fmt(t)))
+    for xs, ys, ts in pandas_values(a):
+        sq.append(metric.Square(x=float(xs), y=float(ys), angle=float(ts),
+                                x_str=xs, y_str=ys, angle_str=ts))
     ok, _ = metric.verify_puzzle(sq)
     if not ok:
         return False, None

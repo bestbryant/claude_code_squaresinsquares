@@ -313,3 +313,107 @@ def grow_all(F, Q, h0, W, steps, dxy, dth, seed, tol, grow_every, dh):
         if ok:
             Q[i, 0] = x; Q[i, 1] = y; Q[i, 2] = t
     return Q, h
+
+
+@nb.njit(cache=True)
+def grow_push(P, isfree, k, h0, W, steps, dxy, seed, tol, maxc):
+    """Grow square k (half-size h) among unit squares; moves are push-chain translations:
+    move square i by d, every free square it then overlaps is pushed by d too (recursively).
+    Rejected if the cluster hits a non-free square, a wall, or exceeds maxc squares."""
+    np.random.seed(seed)
+    n = P.shape[0]
+    h = h0
+    cl = np.empty(n, np.int64)
+    inc = np.zeros(n, np.bool_)
+    fidx = np.where(isfree)[0]
+    nf = fidx.shape[0]
+    dh = 0.002
+    for it in range(steps):
+        if it % 10 == 0:
+            h2 = min(0.5, h + dh)
+            ok = True
+            X, Y = corners_s(P[k, 0], P[k, 1], P[k, 2], h2)
+            for q in range(4):
+                if X[q] < -tol or Y[q] < -tol or X[q] > W + tol or Y[q] > W + tol:
+                    ok = False
+            if ok:
+                for j in range(n):
+                    if j != k and overlap_s(P[k, 0], P[k, 1], P[k, 2], h2, P[j, 0], P[j, 1], P[j, 2], 0.5, tol):
+                        ok = False
+                        break
+            if ok:
+                h = h2
+                dh = min(dh * 1.5, 0.01)
+                if h >= 0.5:
+                    break
+            else:
+                dh = max(dh * 0.7, 1e-6)
+            continue
+        i = fidx[np.random.randint(nf)]
+        if np.random.random() < 0.3 and i != k:
+            # small rotation, single particle
+            t = P[i, 2] + 0.3 * dxy * (2 * np.random.random() - 1)
+            ok = True
+            X, Y = corners_s(P[i, 0], P[i, 1], t, 0.5)
+            for q in range(4):
+                if X[q] < -tol or Y[q] < -tol or X[q] > W + tol or Y[q] > W + tol:
+                    ok = False
+            if ok:
+                for j in range(n):
+                    hj = h if j == k else 0.5
+                    if j != i and overlap_s(P[i, 0], P[i, 1], t, 0.5, P[j, 0], P[j, 1], P[j, 2], hj, tol):
+                        ok = False
+                        break
+            if ok:
+                P[i, 2] = t
+            continue
+        a = np.random.random() * 2 * math.pi
+        r = dxy * np.random.random()
+        dx = r * math.cos(a); dy = r * math.sin(a)
+        # build cluster
+        nc = 1; cl[0] = i; inc[i] = True
+        ok = True
+        p = 0
+        while p < nc and ok:
+            a_ = cl[p]; p += 1
+            ha = h if a_ == k else 0.5
+            xa = P[a_, 0] + dx; ya = P[a_, 1] + dy
+            X, Y = corners_s(xa, ya, P[a_, 2], ha)
+            for q in range(4):
+                if X[q] < -tol or Y[q] < -tol or X[q] > W + tol or Y[q] > W + tol:
+                    ok = False
+            if not ok:
+                break
+            for j in range(n):
+                if inc[j]:
+                    continue
+                hj = h if j == k else 0.5
+                if overlap_s(xa, ya, P[a_, 2], ha, P[j, 0], P[j, 1], P[j, 2], hj, tol):
+                    if not isfree[j] or nc >= maxc:
+                        ok = False
+                        break
+                    cl[nc] = j; inc[j] = True; nc += 1
+        # a pushed square may overlap with squares already checked at old positions: verify final
+        if ok:
+            for c in range(nc):
+                a_ = cl[c]
+                P[a_, 0] += dx; P[a_, 1] += dy
+            for c in range(nc):
+                a_ = cl[c]
+                ha = h if a_ == k else 0.5
+                for j in range(n):
+                    if j == a_:
+                        continue
+                    hj = h if j == k else 0.5
+                    if overlap_s(P[a_, 0], P[a_, 1], P[a_, 2], ha, P[j, 0], P[j, 1], P[j, 2], hj, tol):
+                        ok = False
+                        break
+                if not ok:
+                    break
+            if not ok:
+                for c in range(nc):
+                    a_ = cl[c]
+                    P[a_, 0] -= dx; P[a_, 1] -= dy
+        for c in range(nc):
+            inc[cl[c]] = False
+    return P, h
