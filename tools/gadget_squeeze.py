@@ -57,6 +57,11 @@ if __name__ == '__main__':
     max_dm = int(sys.argv[4]) if len(sys.argv) > 4 else 8
     os.makedirs(outdir, exist_ok=True)
     sel = select(G, max_dm)
+    logp = os.environ.get('GSQLOG')
+    if logp and os.path.exists(logp):
+        import re
+        done = set(tuple(map(int, re.findall(r'\d+', l.replace('np.int64(', '').replace(')', '', 1))[:3])) for l in open(logp) if l.startswith('('))
+        sel = [s_ for s_ in sel if (int(s_[0]), int(s_[1]), int(s_[2])) not in done]
     print(len(sel), 'gadgets', flush=True)
     with Pool(int(os.environ.get("NP", 4))) as pool:
         for key, f0, f1, ok in pool.imap_unordered(job, [(w, h, dm, f, src, T, outdir, i) for i, (w, h, dm, f, src) in enumerate(sel)]):
