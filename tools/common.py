@@ -78,3 +78,20 @@ def write_submission(path, sol):
             for i, (x, y, t) in enumerate(a):
                 w.writerow([rows, n, i, fmt(x), fmt(y), fmt(t)])
                 rows += 1
+
+
+def finalize(P):
+    """Return (P', L) passing the official verify, scaling centres apart slightly if contacts are
+    undecidable; (None, None) if no small scaling works."""
+    P = np.asarray(P, float)
+    ok, L = verify(P)
+    if ok:
+        return P, L
+    c = P[:, :2].mean(0)
+    for e in (1e-11, 1e-10, 1e-9, 1e-8, 1e-7):
+        Q = P.copy()
+        Q[:, :2] = c + (P[:, :2] - c) * (1 + e)
+        ok, L = verify(Q)
+        if ok:
+            return Q, L
+    return None, None

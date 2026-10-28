@@ -103,7 +103,13 @@ def relax(P, S, free=None, iters=3000, rounds=6, tol=1e-28, mu=0.0):
             res = minimize(energy_grad, P.ravel(), args=(n, S, pairs, None, None, mu), jac=True, method='L-BFGS-B',
                            options={'maxiter': iters, 'ftol': 1e-30, 'gtol': 1e-16, 'maxcor': 30})
             P = res.x.reshape(n, 3)
-        E = res.fun
+        # true energy with a fresh pair list (squares may have moved into new contacts)
+        fp = near_pairs(P, math.sqrt(2) + 1e-6)
+        if free is not None:
+            fp = fp[fm[fp[:, 0]] | fm[fp[:, 1]]]
+            E = energy_grad(P[free].ravel(), n, S, fp, free, P, mu)[0]
+        else:
+            E = energy_grad(P.ravel(), n, S, fp, None, None, mu)[0]
         if E < tol:
             break
     return P, E

@@ -163,3 +163,153 @@ def run_box(P, S, steps, dxy, dth, pressure, seed, tol, box_every):
                     best_S = S
                     best_P = P.copy()
     return best_P, best_S, acc
+
+
+@nb.njit(cache=True)
+def corners_s(x, y, t, h):
+    c = math.cos(t); s = math.sin(t)
+    X = np.empty(4); Y = np.empty(4)
+    vx = (h, -h, -h, h); vy = (h, h, -h, -h)
+    for k in range(4):
+        X[k] = x + c * vx[k] - s * vy[k]
+        Y[k] = y + s * vx[k] + c * vy[k]
+    return X, Y
+
+
+@nb.njit(cache=True)
+def overlap_s(x1, y1, t1, h1, x2, y2, t2, h2, tol):
+    dx = x2 - x1; dy = y2 - y1
+    r = (h1 + h2) * 1.4143
+    if dx * dx + dy * dy >= r * r:
+        return False
+    X1, Y1 = corners_s(x1, y1, t1, h1)
+    X2, Y2 = corners_s(x2, y2, t2, h2)
+    for which in range(2):
+        t = t1 if which == 0 else t2
+        for m in range(2):
+            a = t + m * math.pi / 2
+            ux = math.cos(a); uy = math.sin(a)
+            mn1 = 1e9; mx1 = -1e9; mn2 = 1e9; mx2 = -1e9
+            for k in range(4):
+                p = X1[k] * ux + Y1[k] * uy
+                mn1 = min(mn1, p); mx1 = max(mx1, p)
+                q = X2[k] * ux + Y2[k] * uy
+                mn2 = min(mn2, q); mx2 = max(mx2, q)
+            if mx1 <= mn2 + tol or mx2 <= mn1 + tol:
+                return False
+    return True
+
+
+@nb.njit(cache=True)
+def grow_one(P, free, k, h0, W, H, steps, dxy, dth, seed, tol):
+    """Free squares move; square k (half-size h0 initially) grows toward 0.5 whenever possible.
+    Returns (P, h_final)."""
+    np.random.seed(seed)
+    n = P.shape[0]
+    nf = free.shape[0]
+    h = h0
+    for it in range(steps):
+        if it % 20 == 0 and h < 0.5:
+            h2 = min(0.5, h + 0.002)
+            ok = True
+            X, Y = corners_s(P[k, 0], P[k, 1], P[k, 2], h2)
+            for q in range(4):
+                if X[q] < -tol or Y[q] < -tol or X[q] > W + tol or Y[q] > H + tol:
+                    ok = False
+            if ok:
+                for j in range(n):
+                    if j != k and overlap_s(P[k, 0], P[k, 1], P[k, 2], h2, P[j, 0], P[j, 1], P[j, 2], 0.5, tol):
+                        ok = False
+                        break
+            if ok:
+                h = h2
+            continue
+        i = free[np.random.randint(nf)]
+        x = P[i, 0] + dxy * (2 * np.random.random() - 1)
+        y = P[i, 1] + dxy * (2 * np.random.random() - 1)
+        t = P[i, 2] + dth * (2 * np.random.random() - 1)
+        hi = h if i == k else 0.5
+        X, Y = corners_s(x, y, t, hi)
+        ok = True
+        for q in range(4):
+            if X[q] < -tol or Y[q] < -tol or X[q] > W + tol or Y[q] > H + tol:
+                ok = False
+        if not ok:
+            continue
+        for j in range(n):
+            if j != i:
+                hj = h if j == k else 0.5
+                if overlap_s(x, y, t, hi, P[j, 0], P[j, 1], P[j, 2], hj, tol):
+                    ok = False
+                    break
+        if ok:
+            P[i, 0] = x; P[i, 1] = y; P[i, 2] = t
+        if h >= 0.5:
+            break
+    return P, h
+
+
+@nb.njit(cache=True)
+def grow_all(F, Q, h0, W, steps, dxy, dth, seed, tol, grow_every, dh):
+    """LS growth: Q (m,3) free squares with common half-size h (start h0) among fixed F (k,3)
+    unit squares, box [0,W]^2.  Returns (Q, h)."""
+    np.random.seed(seed)
+    m = Q.shape[0]; k = F.shape[0]
+    h = h0
+    for it in range(steps):
+        if it % grow_every == 0 and h < 0.5:
+            h2 = min(0.5, h + dh)
+            ok = True
+            for i in range(m):
+                X, Y = corners_s(Q[i, 0], Q[i, 1], Q[i, 2], h2)
+                for q in range(4):
+                    if X[q] < -tol or Y[q] < -tol or X[q] > W + tol or Y[q] > W + tol:
+                        ok = False
+                if not ok:
+                    break
+                for j in range(i + 1, m):
+                    if overlap_s(Q[i, 0], Q[i, 1], Q[i, 2], h2, Q[j, 0], Q[j, 1], Q[j, 2], h2, tol):
+                        ok = False
+                        break
+                if not ok:
+                    break
+                for j in range(k):
+                    if overlap_s(Q[i, 0], Q[i, 1], Q[i, 2], h2, F[j, 0], F[j, 1], F[j, 2], 0.5, tol):
+                        ok = False
+                        break
+                if not ok:
+                    break
+            if ok:
+                h = h2
+                dh = min(dh * 1.3, 0.004)
+            else:
+                dh *= 0.7
+                if dh < 1e-7:
+                    dh = 1e-7
+            if h >= 0.5:
+                break
+            continue
+        i = np.random.randint(m)
+        x = Q[i, 0] + dxy * h * (2 * np.random.random() - 1)
+        y = Q[i, 1] + dxy * h * (2 * np.random.random() - 1)
+        t = Q[i, 2] + dth * (2 * np.random.random() - 1)
+        X, Y = corners_s(x, y, t, h)
+        ok = True
+        for q in range(4):
+            if X[q] < -tol or Y[q] < -tol or X[q] > W + tol or Y[q] > W + tol:
+                ok = False
+        if not ok:
+            continue
+        for j in range(m):
+            if j != i and overlap_s(x, y, t, h, Q[j, 0], Q[j, 1], Q[j, 2], h, tol):
+                ok = False
+                break
+        if not ok:
+            continue
+        for j in range(k):
+            if overlap_s(x, y, t, h, F[j, 0], F[j, 1], F[j, 2], 0.5, tol):
+                ok = False
+                break
+        if ok:
+            Q[i, 0] = x; Q[i, 1] = y; Q[i, 2] = t
+    return Q, h

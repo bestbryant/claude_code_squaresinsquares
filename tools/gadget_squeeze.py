@@ -8,7 +8,7 @@ from multiprocessing import Pool
 sys.path.insert(0, os.path.dirname(__file__))
 from gadgets import crop
 from fault_opt import squeeze_rect
-from common import verify
+from common import finalize
 
 ROOT = os.path.join(os.path.dirname(__file__), '..')
 
@@ -39,7 +39,11 @@ def job(args):
                              kick=(0.06, 0.2)[s], delta0=0.002)
         if f2 < best_f - 1e-9:
             best_f, best_P = f2, Q
-    ok = best_f < f - 1e-9 and verify(best_P)[0]
+    ok = False
+    if best_f < f - 1e-9:
+        Q, _ = finalize(best_P)
+        ok = Q is not None
+        best_P = Q if ok else best_P
     if ok:
         np.save(os.path.join(outdir, f'g_{w}_{h}_{dm}.npy'), best_P)
     return (w, h, dm), f, best_f, ok
@@ -52,6 +56,6 @@ if __name__ == '__main__':
     os.makedirs(outdir, exist_ok=True)
     sel = select(G, max_dm)
     print(len(sel), 'gadgets', flush=True)
-    with Pool(4) as pool:
+    with Pool(int(os.environ.get("NP", 4))) as pool:
         for key, f0, f1, ok in pool.imap_unordered(job, [(w, h, dm, f, src, T, outdir, i) for i, (w, h, dm, f, src) in enumerate(sel)]):
             print(key, '%.6f -> %.6f' % (f0, f1), 'SAVED' if ok else '', flush=True)

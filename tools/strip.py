@@ -13,7 +13,7 @@ from fault_opt import squeeze
 from slp import side, normalize
 
 
-def build(K, f, c0, w=4, rows=3, extra=0, irange=None, rng=None, jitter=0.0):
+def build(K, f, c0, w=4, rows=3, extra=0, irange=None, rng=None, jitter=0.0, ang=math.pi / 4, spacing=None, stagger=0.0, equal=False):
     rng = rng or np.random.default_rng(0)
     cells = []
     removed = 0
@@ -49,17 +49,24 @@ def build(K, f, c0, w=4, rows=3, extra=0, irange=None, rng=None, jitter=0.0):
             umax = min(umax, (hi - cst / 2) * math.sqrt(2))
         segs.append((cst, umin, umax))
     lens = np.array([max(0.0, b - a) for _, a, b in segs])
-    cnt = np.floor(lens / lens.sum() * nt).astype(int)
-    while cnt.sum() < nt:
-        cnt[np.argmax(lens / np.maximum(cnt, 1e-9) - 0)] += 1
+    if equal:
+        cnt = np.full(len(segs), nt // len(segs)); cnt[len(segs) // 2] += nt - cnt.sum()
+    else:
+        cnt = np.floor(lens / lens.sum() * nt).astype(int)
+        while cnt.sum() < nt:
+            cnt[np.argmax(lens / np.maximum(cnt, 1e-9) - 0)] += 1
     T = []
-    for (cst, a, b), c in zip(segs, cnt):
+    for r_, ((cst, a, b), c) in enumerate(zip(segs, cnt)):
         if c <= 0:
             continue
-        us = np.linspace(a, b, c) if c > 1 else np.array([(a + b) / 2])
+        if spacing is None:
+            us = np.linspace(a, b, c) if c > 1 else np.array([(a + b) / 2])
+        else:
+            mid_u = (a + b) / 2 + stagger * (r_ - (len(segs) - 1) / 2)
+            us = mid_u + spacing * (np.arange(c) - (c - 1) / 2)
         for u in us:
             x = cst / 2 + u / math.sqrt(2); y = cst / 2 - u / math.sqrt(2)
-            T.append((x, y, math.pi / 4 + jitter * rng.normal()))
+            T.append((x, y, ang + jitter * rng.normal()))
     P = np.vstack([np.array(cells).reshape(-1, 3), np.array(T).reshape(-1, 3)])
     return P, removed
 

@@ -6,7 +6,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from mc import run
 from fault_opt import classify
 from slp import polish, side, normalize
-from common import verify
+from common import verify, finalize
 from scipy.spatial import cKDTree
 ROOT = os.path.join(os.path.dirname(__file__), '..')
 
@@ -48,7 +48,10 @@ if __name__ == '__main__':
             Q, L = polish(P, iters=300, time_limit=120)
         else:
             Q, L = P, S
-        ok = L < best - 1e-9 and verify(Q)[0]
+        ok = False
+        if L < best - 1e-9:
+            Q, L = finalize(Q)
+            ok = Q is not None and L < best - 1e-9
         print(n, r, 'melt %.3f R %.1f' % (melt, R), 'free %d mc %.6f polished %.6f (cur %.6f) ok=%s %.0fs' % (nf, S, L, L0, ok, time.time() - t), flush=True)
         if ok and L < best - 1e-9:
             best = L

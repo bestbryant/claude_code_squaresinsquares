@@ -4,7 +4,7 @@
 R=$(cd "$(dirname "$0")" && pwd); cd $R
 S=/tmp/claude-0/-home-user-claude-code-squaresinsquares/56241591-3644-5216-ad00-1269913e179e/scratchpad
 LAST=$S/last_submitted_score.txt; [ -f $LAST ] || echo 22.2958508772 > $LAST
-./run_bg.sh
+true  # hoppers retired (no gains)
 ./refresh.sh
 SC=$(python3 tools/make_submission.py 2>&1 | grep 'official score' | awk '{print $3}')
 echo "score $SC (last submitted $(cat $LAST))"
