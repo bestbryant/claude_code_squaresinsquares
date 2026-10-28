@@ -131,7 +131,7 @@ def free_space_point(P, S, res=0.05, rng=None, k=1, region=None):
         j0, j1 = max(int(Y.min() / res) - 1, 0), min(int(Y.max() / res) + 2, N)
         sub = np.c_[GX[i0:i1, j0:j1].ravel(), GY[i0:i1, j0:j1].ravel()]
         occ[i0:i1, j0:j1] |= Path(np.c_[X, Y]).contains_points(sub).reshape(i1 - i0, j1 - j0)
-    pad = np.ones((N + 2, N + 2), bool)
+    pad = np.zeros((N + 2, N + 2), bool)  # outside the box counts as occupied
     pad[1:-1, 1:-1] = ~occ
     D = distance_transform_edt(pad)[1:-1, 1:-1] * res
     mx = maximum_filter(D, size=int(0.6 / res)) == D
