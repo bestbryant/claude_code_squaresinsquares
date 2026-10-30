@@ -6,6 +6,7 @@ S=/tmp/claude-0/-home-user-claude-code-squaresinsquares/56241591-3644-5216-ad00-
 LAST=$S/last_submitted_score.txt; [ -f $LAST ] || echo 22.2958508772 > $LAST
 true  # hoppers retired (no gains)
 ./refresh.sh
+CH=$(git diff --name-only -- solutions; git ls-files --others --exclude-standard solutions); [ -n "$CH" ] && python3 tools/robustify.py $CH 2>&1 | grep -v Warn | tail -1
 SC=$(python3 tools/make_submission.py 2>&1 | grep 'official score' | awk '{print $3}')
 echo "score $SC (last submitted $(cat $LAST))"
 gzip -9 -c submission.csv > submission.csv.gz
