@@ -50,7 +50,7 @@ def main():
     work = []
     for n in range(1, 1001):
         cur = side(store[n]) if n in store else math.ceil(math.sqrt(n))
-        c = [a for a in pool_c[n] if side(a) < cur - 1e-12 or (n in store and a is store[n])]
+        c = [a for a in pool_c[n] if side(a) < cur - 2e-7 or (n in store and a is store[n])]
         # dedupe by L
         seen = {}
         for a in c:
@@ -62,7 +62,7 @@ def main():
         for n, a, L in pool.imap_unordered(best_valid, work, chunksize=4):
             if a is not None:
                 old = side(store[n]) if n in store else math.ceil(math.sqrt(n))
-                if n not in store or L < old - 1e-13:
+                if n not in store or L < old - 2e-7:
                     store[n] = a
                     np.save(os.path.join(SOLDIR, f'n{n}.npy'), a)
     total = sum(score_n(n, side(store[n]) if n in store else math.ceil(math.sqrt(n))) for n in range(1, 1001))
