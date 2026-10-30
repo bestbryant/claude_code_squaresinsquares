@@ -183,7 +183,14 @@ def iv_max(values: Sequence[IVal]) -> IVal:
 
 # Bounds the cost of parsing one coordinate.  Far above any useful precision
 # (L is reported to 50 decimals), so no honest submission comes near it.
-_MAX_LITERAL_CHARS = 1000
+_MAX_LITERAL_CHARS = 100
+
+# Coordinate, angle, and sweep bounds.  For n <= 1000 unit squares, valid
+# packings have side L <= 32.  Bounding magnitudes prevents float64/mpmath
+# discrepancies and precision loss under extreme translation or rotation.
+_MAX_COORD = 1e4
+_MAX_ANGLE = 100.0
+_AABB_PAD = 1e-7
 
 _DECIMAL_RE = re.compile(r'^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$')
 
@@ -234,16 +241,15 @@ def parse_value_mp(s: str, dps: int = L_DPS) -> mpmath.mpf:
 def parse_value_float(s: str) -> float:
     """Parse a decimal literal to float.
 
+    Values too large for a double are rejected rather than becoming ``inf``,
+    which would poison every downstream geometry check:
+
     >>> parse_value_float("3.5")
     3.5
     >>> parse_value_float("-2.5")
     -2.5
     >>> parse_value_float("1.5e-3")
     0.0015
-
-    Values too large for a double are rejected rather than becoming ``inf``,
-    which would poison every downstream geometry check:
-
     >>> parse_value_float("1e400")
     Traceback (most recent call last):
         ...
@@ -268,15 +274,10 @@ def score_puzzle(n: int, s_certified: float) -> float:
     grid packings).  The best-known side length s* plays no part: beating a
     record simply yields a smaller excess.
 
-    Perfect-square grid packing scores 0 exactly:
     >>> score_puzzle(4, 2.0)
     0.0
-
-    Larger L → larger (worse) score:
     >>> round(score_puzzle(5, 2.707), 6)
     0.210607
-
-    Doubling L takes the score from 0 to 1:
     >>> score_puzzle(4, 4.0)
     1.0
     """
@@ -351,8 +352,8 @@ def compute_corners_mp(cx: mpmath.mpf, cy: mpmath.mpf, angle: mpmath.mpf) -> lis
 def measure_side_mp(squares: list['Square'], dps: int = L_DPS) -> mpmath.mpf:
     """Bounding side ``max(max_x - min_x, max_y - min_y)`` at ``dps`` digits.
 
-    Measured from the submitted decimal strings, so a packing whose coordinates
-    carry more than double precision keeps that precision in the reported L.
+    Measured from the submitted decimal strings translated relative to Square 0,
+    so coordinates carry high precision without loss due to global translation.
 
     >>> unit = Square(0.5, 0.5, 0.0, x_str="0.5", y_str="0.5", angle_str="0")
     >>> measure_side_mp([unit])
@@ -363,10 +364,12 @@ def measure_side_mp(squares: list['Square'], dps: int = L_DPS) -> mpmath.mpf:
         mpmath.mp.dps = dps
         xs: list[mpmath.mpf] = []
         ys: list[mpmath.mpf] = []
+        x0 = parse_value_mp(squares[0].x_str, dps) if squares else mpmath.mpf(0)
+        y0 = parse_value_mp(squares[0].y_str, dps) if squares else mpmath.mpf(0)
         for sq in squares:
             corners = compute_corners_mp(
-                parse_value_mp(sq.x_str, dps),
-                parse_value_mp(sq.y_str, dps),
+                parse_value_mp(sq.x_str, dps) - x0,
+                parse_value_mp(sq.y_str, dps) - y0,
                 parse_value_mp(sq.angle_str, dps),
             )
             for x, y in corners:
@@ -391,10 +394,13 @@ def compute_corners_interval(cx_iv: IVal, cy_iv: IVal, angle_iv: IVal) -> list[t
     ]
 
 
-def compute_aabb(corners: list[tuple[float, float]]) -> tuple[float, float, float, float]:
+def compute_aabb(
+    corners: list[tuple[float, float]],
+    pad: float = _AABB_PAD,
+) -> tuple[float, float, float, float]:
     xs = [c[0] for c in corners]
     ys = [c[1] for c in corners]
-    return (min(xs), min(ys), max(xs), max(ys))
+    return (min(xs) - pad, min(ys) - pad, max(xs) + pad, max(ys) + pad)
 
 
 def aabb_overlap(
@@ -617,7 +623,7 @@ def _validate_puzzle(n: int, rows: list[dict]) -> str | None:
 def _build_squares(n: int, rows: list[dict]) -> tuple[list[Square], mpmath.mpf]:
     rows_by_id = {int(r['square_id']): r for r in rows}
 
-    squares = []
+    raw_coords = []
     for sid in range(n):
         row = rows_by_id[sid]
         x_str = row['x'].strip()
@@ -631,11 +637,32 @@ def _build_squares(n: int, rows: list[dict]) -> tuple[list[Square], mpmath.mpf]:
         except ValueError as e:
             raise ParticipantVisibleError(f'n={n}, square {sid}: cannot parse coordinates: {e}')
 
+        if abs(x_f) > _MAX_COORD or abs(y_f) > _MAX_COORD:
+            raise ParticipantVisibleError(f'n={n}, square {sid}: coordinate out of bounds (|x|, |y| must be <= {_MAX_COORD:g})')
+        if abs(angle_f) > _MAX_ANGLE:
+            raise ParticipantVisibleError(f'n={n}, square {sid}: angle out of bounds (|angle| must be <= {_MAX_ANGLE:g} radians)')
+
+        raw_coords.append((sid, x_str, y_str, angle_str))
+
+    x0_mp = parse_value_mp(raw_coords[0][1], L_DPS)
+    y0_mp = parse_value_mp(raw_coords[0][2], L_DPS)
+    two_pi = 2 * mpmath.pi
+
+    squares = []
+    for sid, x_str, y_str, angle_str in raw_coords:
+        x_mp = parse_value_mp(x_str, L_DPS)
+        y_mp = parse_value_mp(y_str, L_DPS)
+        angle_mp = parse_value_mp(angle_str, L_DPS)
+
+        dx_f = float(x_mp - x0_mp)
+        dy_f = float(y_mp - y0_mp)
+        angle_reduced_f = float(angle_mp % two_pi)
+
         squares.append(
             Square(
-                x=x_f,
-                y=y_f,
-                angle=angle_f,
+                x=dx_f,
+                y=dy_f,
+                angle=angle_reduced_f,
                 x_str=x_str,
                 y_str=y_str,
                 angle_str=angle_str,
@@ -668,7 +695,16 @@ def evaluate_single_puzzle(n: int, rows: list[dict]) -> tuple[int, float, str | 
     if not feasible:
         return (n, infeasible_score(n), None, f'infeasible: {reason}')
 
-    puzzle_score = score_puzzle(n, float(s_mp))
+    L_B = math.sqrt(n)
+    if float(s_mp) < L_B - 1e-7:
+        return (
+            n,
+            infeasible_score(n),
+            None,
+            f'infeasible: L={float(s_mp):.6f} is below area lower bound sqrt({n})={L_B:.6f}',
+        )
+
+    puzzle_score = max(0.0, score_puzzle(n, float(s_mp)))
     return (n, puzzle_score, _format_detail(s_mp), 'ok')
 
 
