@@ -1,6 +1,7 @@
 """Download a public Kaggle notebook's output files (unauthenticated), with backoff on HTTP 429."""
 import json, sys, subprocess, os, time
 ref = sys.argv[1]; u, s = ref.split('/')
+STAMP = sys.argv[2].replace('T', ' ') if len(sys.argv) > 2 else None
 os.makedirs(s, exist_ok=True)
 d = None
 for attempt in range(6):
@@ -20,3 +21,6 @@ for f in (d or {}).get('files', []):
     subprocess.run(['curl', '-sS', '-L', '-m', '300', '-o', p, f['url']])
     print(ref, fn, os.path.getsize(p))
     time.sleep(2)
+
+if STAMP and (d or {}).get('files') is not None:
+    open(os.path.join(s, '.stamp'), 'w').write(STAMP)
