@@ -36,7 +36,7 @@ def main():
         if n > 1000:
             continue
         old = cur.get(n, math.ceil(math.sqrt(n)))
-        if K + f >= old - 1e-10:
+        if K + f >= old - 2e-7:
             continue
         ch = reconstruct(G, K, d, f)
         if ch is None:
@@ -46,7 +46,7 @@ def main():
             continue
         P = P[:n]
         ok, L = verify(P)
-        if ok and L < old - 1e-10:
+        if ok and L < old - 2e-7:
             np.save(os.path.join(SOL, f'n{n}.npy'), P)
             gain += (old - L) / math.sqrt(n)
             print(f'n={n} {old:.9f} -> {L:.9f} chain={[c[:3] for c in ch]}', flush=True)

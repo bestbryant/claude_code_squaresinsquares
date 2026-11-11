@@ -75,7 +75,7 @@ if __name__ == '__main__':
                     continue
                 Q = Q[:n2] if len(Q) > n2 else Q
                 R, L = finalize(Q)
-                if R is not None and L < best_side(n2) - 1e-9:
+                if R is not None and L < best_side(n2) - 2e-7:
                     g = (best_side(n2) - L) / math.sqrt(n2)
                     np.save(os.path.join(SOL, f'n{n2}.npy'), R)
                     gain += g
