@@ -11,6 +11,8 @@ for p in glob.glob(os.path.join(ROOT, 'solutions', 'n*.npy')):
 tot = 0; totb = 0; gaps = []
 for n in range(1, 1001):
     L = mine.get(n, math.ceil(math.sqrt(n)))
+    if n not in best:
+        best[n] = (L, '(not listed)')
     tot += L / math.sqrt(n) - 1; totb += best[n][0] / math.sqrt(n) - 1
     gaps.append(((L - best[n][0]) / math.sqrt(n), n, L, best[n][0], best[n][1]))
 print('mine', tot, 'best', totb)
