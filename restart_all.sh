@@ -1,6 +1,9 @@
 #!/bin/bash
 # Restart all background search jobs (container restarts kill them).
 S=/tmp/claude-0/-home-user-claude-code-squaresinsquares/56241591-3644-5216-ad00-1269913e179e/scratchpad
+mkdir -p $S/sq $S/gdon $S/ocache
+# container resets drop pip packages: reinstall anything missing
+python3 -c 'import scipy, numba, mpmath, shapely, kaggle' 2>/dev/null || pip install -q scipy numba mpmath shapely kaggle >/dev/null 2>&1
 cd /home/user/claude_code_squaresinsquares/tools
 pgrep -f "mc_grp.py" >/dev/null || setsid nohup python3 mc_grp.py x 30 3000000 $RANDOM 147 172 199 228 260 292 293 328 329 330 365 366 367 232 >> $S/mcg_1.log 2>&1 &
 pgrep -f "gadget_squeeze.py" >/dev/null || (NP=2 GSQLOG=$S/gsq.log setsid nohup sh -c "python3 gadget_squeeze.py $S/gadgets.pkl $S/gdon 240 >> $S/gsq.log 2>&1; python3 dp_pipeline.py $S/gdon > $S/gdp.log 2>&1" >/dev/null 2>&1 &)
